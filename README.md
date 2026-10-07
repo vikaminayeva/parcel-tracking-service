@@ -67,23 +67,27 @@ erDiagram
 **Бизнес-задача:** Вывести список всех недоставленных посылок, которые находятся в пути более 5 дней, с указанием имени клиента и текущего местоположения, для выявления задержек.
 
 ```sql
+WITH last_logs AS (
+    SELECT 
+        tl.parcel_id,
+        tl.status_id,
+        tl.location,
+        tl.updated_at,
+        ROW_NUMBER() OVER (PARTITION BY tl.parcel_id ORDER BY tl.updated_at DESC) AS rn
+    FROM TRACKING_LOGS tl
+)
 SELECT 
     p.track_number AS "Трек-номер",
     u.name AS "Получатель",
     s.status_name AS "Текущий статус",
-    tl.location AS "Последняя точка",
-    tl.updated_at AS "Дата изменения",
-    EXTRACT(DAY FROM (CURRENT_TIMESTAMP - p.created_at)) AS "Дней в пути"
+    ll.location AS "Последняя точка",
+    ll.updated_at AS "Дата изменения",
+    (CURRENT_DATE - p.created_at::date) AS "Дней в пути"
 FROM PARCELS p
 JOIN USERS u ON p.recipient_id = u.id
-JOIN TRACKING_LOGS tl ON tl.parcel_id = p.id
-JOIN STATUSES s ON tl.status_id = s.id
+JOIN last_logs ll ON ll.parcel_id = p.id AND ll.rn = 1
+JOIN STATUSES s ON ll.status_id = s.id
 WHERE s.status_name NOT IN ('Доставлено', 'Возвращено')
-  AND tl.updated_at = (
-      SELECT MAX(updated_at) 
-      FROM TRACKING_LOGS 
-      WHERE parcel_id = p.id
-  )
   AND p.created_at < CURRENT_TIMESTAMP - INTERVAL '5 days'
 ORDER BY "Дней в пути" DESC;
 ```
